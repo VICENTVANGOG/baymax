@@ -3,6 +3,7 @@
 import type React from "react"
 import { useState, useEffect, useCallback } from "react"
 
+
 // Definimos las interfaces para SpeechRecognition
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList
@@ -47,6 +48,11 @@ interface SpeechRecognition extends EventTarget {
   abort(): void
 }
 
+interface SpeechGrammarList {
+  addFromString(grammar: string, weight: number): void
+  addFromUri(src: string, weight: number): void
+}
+
 // Extendemos la interfaz Window para incluir SpeechRecognition
 declare global {
   interface Window {
@@ -55,28 +61,26 @@ declare global {
   }
 }
 
-interface SpeechGrammarList extends EventTarget {
-  addFromString(grammar: string, weight: number): void
-  addFromUri(src: string, weight: number): void
-}
-
 const VoiceAssistant: React.FC = () => {
   const [isListening, setIsListening] = useState(false)
   const [transcript, setTranscript] = useState("")
   const [response, setResponse] = useState("")
   const [isSpeaking, setIsSpeaking] = useState(false)
-
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  const recognition = SpeechRecognition ? new SpeechRecognition() : null
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null)
 
   useEffect(() => {
-    if (recognition) {
-      recognition.continuous = false
-      recognition.lang = "es-ES"
-      recognition.interimResults = false
-      recognition.maxAlternatives = 1
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      if (SpeechRecognition) {
+        const recognitionInstance = new SpeechRecognition()
+        recognitionInstance.continuous = false
+        recognitionInstance.lang = "es-ES"
+        recognitionInstance.interimResults = false
+        recognitionInstance.maxAlternatives = 1
+        setRecognition(recognitionInstance)
+      }
     }
-  }, [recognition])
+  }, [])
 
   const handleListen = useCallback(() => {
     if (!recognition) return
@@ -108,15 +112,17 @@ const VoiceAssistant: React.FC = () => {
   }
 
   const speak = (text: string) => {
-    setIsSpeaking(true)
-    const speech = new SpeechSynthesisUtterance(text)
-    speech.lang = "es-ES"
-    speech.onend = () => setIsSpeaking(false)
-    window.speechSynthesis.speak(speech)
+    if (typeof window !== "undefined") {
+      setIsSpeaking(true)
+      const speech = new SpeechSynthesisUtterance(text)
+      speech.lang = "es-ES"
+      speech.onend = () => setIsSpeaking(false)
+      window.speechSynthesis.speak(speech)
+    }
   }
 
   const toggleListening = () => {
-    if (isSpeaking) {
+    if (isSpeaking && typeof window !== "undefined") {
       window.speechSynthesis.cancel()
       setIsSpeaking(false)
     }
