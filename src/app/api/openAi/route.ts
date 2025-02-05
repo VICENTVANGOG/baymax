@@ -1,28 +1,35 @@
-import { NextRequest, NextResponse } from "next/server";
-import openAiService from "@/app/api/services/openAi.service";
+import { NextApiRequest, NextApiResponse } from "next";
+import { OpenAI } from "openai"; // Use OpenAI class directly
 
-export async function POST(req:NextRequest){
-    const {prompt} = await req.json();
-    if(!prompt)return NextResponse.json({
-        message: "Is requited prompt paramter",
-        status: 400
-    });
-    
-    const data: {message:string,reply:string} = await openAiService.createPrompt(prompt);
-    if(data.message === "openAi"){
-        return NextResponse.json({
-            message: "Error. Is required openAi api key",
-            status: 400
-        });
-    };
-    if(data.message === "chats"){
-        return NextResponse.json({
-            message: "Error to get chats",
-            status: 400
-        });
-    };
-    return NextResponse.json({
-        message: "Successfully",
-        reply: data.reply
-    });
+// Your OpenAI API Key
+const apiKey = process.env.OPENAI_API_KEY;
+
+const openai = new OpenAI({
+  apiKey: apiKey, // Pass the API key
+});
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method === "POST") {
+    const { prompt } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ message: "Prompt is required" });
+    }
+
+    try {
+      const response = await openai.completions.create({
+        model: "text-davinci-003", // Specify the model
+        prompt: prompt,
+        max_tokens: 150, // Customize tokens as needed
+      });
+
+      const reply = response.choices[0]?.text.trim();
+      return res.status(200).json({ reply });
+    } catch (error) {
+      console.error("Error calling OpenAI:", error);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+  } else {
+    res.status(405).json({ message: "Method Not Allowed" });
+  }
 }
