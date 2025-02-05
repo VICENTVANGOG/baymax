@@ -1,133 +1,88 @@
 "use client"
+import { useState, useEffect } from "react";
+import openAiService from "@/app/api/services/openAi.service"; // Asegúrate de tener esta importación de tu servicio.
 
-import type React from "react"
-import { useState, useEffect, useCallback } from "react"
-
-
-// Definimos las interfaces para SpeechRecognition
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList
-}
-
-interface SpeechRecognitionResultList {
-  readonly length: number
-  item(index: number): SpeechRecognitionResult
-  [index: number]: SpeechRecognitionResult
-}
-
-interface SpeechRecognitionResult {
-  readonly length: number
-  item(index: number): SpeechRecognitionAlternative
-  [index: number]: SpeechRecognitionAlternative
-}
-
-interface SpeechRecognitionAlternative {
-  readonly transcript: string
-  readonly confidence: number
-}
-
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean
-  grammars: SpeechGrammarList
-  interimResults: boolean
-  lang: string
-  maxAlternatives: number
-  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null
-  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null
-  onend: ((this: SpeechRecognition, ev: Event) => any) | null
-  onerror: ((this: SpeechRecognition, ev: Event) => any) | null
-  onnomatch: ((this: SpeechRecognition, ev: Event) => any) | null
-  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null
-  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null
-  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null
-  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null
-  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null
-  onstart: ((this: SpeechRecognition, ev: Event) => any) | null
-  start(): void
-  stop(): void
-  abort(): void
-}
-
-interface SpeechGrammarList {
-  addFromString(grammar: string, weight: number): void
-  addFromUri(src: string, weight: number): void
-}
-
-// Extendemos la interfaz Window para incluir SpeechRecognition
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition
-    webkitSpeechRecognition: new () => SpeechRecognition
-  }
-}
-
-const VoiceAssistant: React.FC = () => {
-  const [isListening, setIsListening] = useState(false)
-  const [transcript, setTranscript] = useState("")
-  const [response, setResponse] = useState("")
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null)
+const VoiceAssistant = () => {
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [response, setResponse] = useState("");
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [isActivated, setIsActivated] = useState(false); // Para saber si el asistente está activado.
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
-        const recognitionInstance = new SpeechRecognition()
-        recognitionInstance.continuous = false
-        recognitionInstance.lang = "es-ES"
-        recognitionInstance.interimResults = false
-        recognitionInstance.maxAlternatives = 1
-        setRecognition(recognitionInstance)
+        const recognitionInstance = new SpeechRecognition();
+        recognitionInstance.continuous = true; // Esto hará que el reconocimiento esté activo constantemente
+        recognitionInstance.lang = "es-ES";
+        recognitionInstance.interimResults = true; // Para que reconozca lo que dices en tiempo real
+        recognitionInstance.maxAlternatives = 1;
+        setRecognition(recognitionInstance);
+
+        recognitionInstance.onresult = (event: SpeechRecognitionEvent) => { 
+          const transcript = event.results[event.resultIndex][0].transcript;
+          setTranscript(transcript);
+
+          // Si la palabra "auh" es detectada, activamos el asistente.
+          if (transcript.toLowerCase().includes("auh") && !isActivated) {
+            setIsActivated(true);
+            speak("Hola, soy Baymax, tu asistente médico personal.");
+          }
+
+          if (isActivated && transcript.toLowerCase().includes("me duele")) {
+            // Si mencionas "me duele", se activa la consulta a la API de OpenAI.
+            handlePainResponse(transcript);
+          }
+        };
+
+        recognitionInstance.onerror = (event: SpeechRecognitionEvent) => {
+          console.error("Error de reconocimiento de voz:", event.error);
+        };
       }
     }
-  }, [])
+  }, [isActivated]);
 
-  const handleListen = useCallback(() => {
-    if (!recognition) return
-
-    if (isListening) {
-      recognition.start()
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0][0].transcript
-        setTranscript(transcript)
-        handleResponse(transcript)
-      }
-    } else {
-      recognition.stop()
+  const handlePainResponse = async (input: string) => {
+    try {
+      const result = await openAiService.createPrompt(input);
+      setResponse(result.reply);
+      speak(result.reply);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (error) {
+      setResponse("Hubo un error al obtener la respuesta.");
+      speak("Hubo un error al obtener la respuesta.");
     }
-
-    recognition.onend = () => {
-      setIsListening(false)
-    }
-  }, [isListening, recognition])
-
-  useEffect(() => {
-    handleListen()
-  }, [handleListen])
-
-  const handleResponse = (input: string) => {
-    const assistantResponse = `He entendido que has dicho: ${input}`
-    setResponse(assistantResponse)
-    speak(assistantResponse)
-  }
+  };
 
   const speak = (text: string) => {
     if (typeof window !== "undefined") {
-      setIsSpeaking(true)
-      const speech = new SpeechSynthesisUtterance(text)
-      speech.lang = "es-ES"
-      speech.onend = () => setIsSpeaking(false)
-      window.speechSynthesis.speak(speech)
+      setIsSpeaking(true);
+      const speech = new SpeechSynthesisUtterance(text);
+      speech.lang = "es-ES";
+      speech.onend = () => setIsSpeaking(false);
+      window.speechSynthesis.speak(speech);
     }
-  }
+  };
 
   const toggleListening = () => {
-    if (isSpeaking && typeof window !== "undefined") {
-      window.speechSynthesis.cancel()
-      setIsSpeaking(false)
+    if (isSpeaking) {
+      // Si está hablando, cancelamos la síntesis y detenemos el reconocimiento.
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
     }
-    setIsListening(!isListening)
-  }
+
+    if (!isListening) {
+      // Empezamos el reconocimiento de voz
+      recognition?.start();
+    } else {
+      // Si ya está escuchando, lo detenemos
+      recognition?.stop();
+    }
+
+    setIsListening(!isListening);
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
@@ -137,7 +92,7 @@ const VoiceAssistant: React.FC = () => {
         className={`mb-4 ${isListening ? "bg-red-500 hover:bg-red-600" : "bg-blue-500 hover:bg-blue-600"}`}
         disabled={isSpeaking || !recognition}
       >
-        {isListening ? "Detener" : "Hablar"}
+        {isActivated ? (isListening ? "Detener" : "Escuchar") : "Esperando la palabra clave..."}
       </button>
       <div className="bg-white p-4 rounded-lg shadow-md w-full max-w-md">
         <p className="mb-2">
@@ -150,8 +105,7 @@ const VoiceAssistant: React.FC = () => {
       </div>
       {!recognition && <p className="text-red-500 mt-4">Tu navegador no soporta el reconocimiento de voz.</p>}
     </div>
-  )
-}
+  );
+};
 
-export default VoiceAssistant
-
+export default VoiceAssistant;
